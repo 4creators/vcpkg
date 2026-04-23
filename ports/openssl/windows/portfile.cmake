@@ -1,3 +1,7 @@
+if(EXISTS "${CURRENT_INSTALLED_DIR}/share/openssl/copyright")
+    message(FATAL_ERROR "Can't build openssl4 if openssl is installed. Please remove openssl, and try install openssl4 again if you need it.")
+endif()
+
 # Need cmd to pass quoted CC from nmake to mkbuildinf.pl, GH-37134
 find_program(CMD_EXECUTABLE cmd HINTS ENV PATH NO_DEFAULT_PATH REQUIRED)
 cmake_path(NATIVE_PATH CMD_EXECUTABLE cmd)
@@ -71,22 +75,16 @@ endif()
 cmake_path(NATIVE_PATH VCPKG_DETECTED_CMAKE_AR NORMALIZE ar)
 cmake_path(NATIVE_PATH VCPKG_DETECTED_CMAKE_LINKER NORMALIZE ld)
 
-# We can't set openssldir because that would leak build machine information into the built binaries,
-# and introduce vulnerabilities where OpenSSL would search those locations at runtime, potentially
-# unexpectedly loading code from there. For example CVE-2019-12572
-#
-# Put the built bits in subdirectories with DESTDIR then move them where they go after the fact
-# instead.
 vcpkg_build_nmake(
     SOURCE_PATH "${SOURCE_PATH}"
     PREFER_JOM
     CL_LANGUAGE NONE
     PRERUN_SHELL_RELEASE "${PERL}" Configure
-        ${CONFIGURE_OPTIONS} 
+        ${CONFIGURE_OPTIONS}
         ${OPENSSL_ARCH}
         "AS=${as}"
         "CC=${cc}"
-        "CFLAGS=${VCPKG_COMBINED_C_FLAGS_RELEASE}"
+        "CFLAGS=${VCPKG_COMBINED_C_FLAGS_RELEASE} -I. -Iinclude -Iapps -Iapps/include"
         "AR=${ar}"
         "ARFLAGS=${VCPKG_COMBINED_STATIC_LINKER_FLAGS_RELEASE}"
         "LD=${ld}"
@@ -97,7 +95,7 @@ vcpkg_build_nmake(
         --debug
         "AS=${as}"
         "CC=${cc}"
-        "CFLAGS=${VCPKG_COMBINED_C_FLAGS_DEBUG}"
+        "CFLAGS=${VCPKG_COMBINED_C_FLAGS_DEBUG} -I. -Iinclude -Iapps -Iapps/include"
         "AR=${ar}"
         "ARFLAGS=${VCPKG_COMBINED_STATIC_LINKER_FLAGS_DEBUG}"
         "LD=${ld}"
@@ -121,8 +119,6 @@ function(z_rearrange_openssl_dirs)
         message(FATAL_ERROR "z_rearrange_openssl_dirs was passed extra arguments: ${arg_UNPARSED_ARGUMENTS}")
     endif()
 
-    # The resulting directory will contain something like "Program Files" or "Program Files (x86)";
-    # globbing here to be architecture agnostic
     set(prefix_packages_dir "${CURRENT_PACKAGES_DIR}${arg_FLAVOR_PREFIX}")
     file(GLOB flavor_programfiles_dir LIST_DIRECTORIES true "${prefix_packages_dir}/Program*")
     if(NOT flavor_programfiles_dir)
@@ -138,11 +134,16 @@ function(z_rearrange_openssl_dirs)
         message(FATAL_ERROR "${flavor_openssl_dir}: should exist and be OpenSSLDir")
     endif()
 
-    # ideally we would use RENAME rather than COPY and REMOVE_RECURSE but CMake doesn't have an out
-    # of the box way to do that correctly merging directories
     file(GLOB flavor_openssl_dirs LIST_DIRECTORIES true "${flavor_openssl_dir}/*")
     file(COPY ${flavor_openssl_dirs} DESTINATION "${prefix_packages_dir}")
     file(REMOVE_RECURSE "${flavor_openssl_dir}")
+
+    set(flavor_common_openssl_dir "${flavor_programfiles_dir}/Common Files/OpenSSL")
+    if(EXISTS "${flavor_common_openssl_dir}")
+        file(GLOB common_openssl_dirs LIST_DIRECTORIES true "${flavor_common_openssl_dir}/*")
+        file(COPY ${common_openssl_dirs} DESTINATION "${prefix_packages_dir}")
+        file(REMOVE_RECURSE "${flavor_common_openssl_dir}")
+    endif()
 endfunction()
 
 z_rearrange_openssl_dirs(FLAVOR_PREFIX "" OUT_PROGRAM_FILES_DIR release_programfiles)
@@ -150,38 +151,45 @@ if(NOT VCPKG_BUILD_TYPE)
     z_rearrange_openssl_dirs(FLAVOR_PREFIX "/debug" OUT_PROGRAM_FILES_DIR debug_programfiles)
     file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
     file(REMOVE_RECURSE "${debug_programfiles}")
-    file(REMOVE "${CURRENT_PACKAGES_DIR}/debug/bin/c_rehash.pl")
 endif()
 
-set(scripts "bin/c_rehash.pl" "misc/CA.pl" "misc/tsget.pl")
 if("tools" IN_LIST FEATURES)
-    file(MAKE_DIRECTORY "${CURRENT_PACKAGES_DIR}/tools/${PORT}")
-    file(COPY_FILE "${release_programfiles}/Common Files/SSL/openssl.cnf" "${CURRENT_PACKAGES_DIR}/tools/${PORT}/openssl.cnf")
+    # Match standard openssl port layout exactly (tools/openssl)
+    vcpkg_copy_tools(TOOL_NAMES openssl AUTO_CLEAN)
+    
+    file(MAKE_DIRECTORY "${CURRENT_PACKAGES_DIR}/tools/openssl")
+    
+    # Move configs and scripts from the root SSL directory to tools/openssl
+    file(RENAME "${CURRENT_PACKAGES_DIR}/SSL/openssl.cnf" "${CURRENT_PACKAGES_DIR}/tools/openssl/openssl.cnf")
     if("fips" IN_LIST FEATURES)
-	    file(COPY_FILE "${release_programfiles}/Common Files/SSL/fipsmodule.cnf" "${CURRENT_PACKAGES_DIR}/tools/${PORT}/fipsmodule.cnf")
+        if(EXISTS "${CURRENT_PACKAGES_DIR}/SSL/fipsmodule.cnf")
+            file(RENAME "${CURRENT_PACKAGES_DIR}/SSL/fipsmodule.cnf" "${CURRENT_PACKAGES_DIR}/tools/openssl/fipsmodule.cnf")
+        endif()
     endif()
 
-    file(RENAME "${CURRENT_PACKAGES_DIR}/bin/c_rehash.pl" "${CURRENT_PACKAGES_DIR}/tools/${PORT}/c_rehash.pl")
-    file(RENAME "${release_programfiles}/Common Files/SSL/misc/CA.pl" "${CURRENT_PACKAGES_DIR}/tools/${PORT}/CA.pl")
-    file(RENAME "${release_programfiles}/Common Files/SSL/misc/tsget.pl" "${CURRENT_PACKAGES_DIR}/tools/${PORT}/tsget.pl")
-    vcpkg_copy_tools(TOOL_NAMES openssl AUTO_CLEAN)
-else()
-    file(REMOVE
-        "${CURRENT_PACKAGES_DIR}/bin/c_rehash.pl"
-        "${release_programfiles}/Common Files/SSL/misc/CA.pl"
-        "${release_programfiles}/Common Files/SSL/misc/tsget.pl"
-        )
-
-    if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
-        file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug/bin")
+    if(EXISTS "${CURRENT_PACKAGES_DIR}/SSL/misc/CA.pl")
+        file(RENAME "${CURRENT_PACKAGES_DIR}/SSL/misc/CA.pl" "${CURRENT_PACKAGES_DIR}/tools/openssl/CA.pl")
+    endif()
+    if(EXISTS "${CURRENT_PACKAGES_DIR}/SSL/misc/tsget.pl")
+        file(RENAME "${CURRENT_PACKAGES_DIR}/SSL/misc/tsget.pl" "${CURRENT_PACKAGES_DIR}/tools/openssl/tsget.pl")
     endif()
 endif()
 
 vcpkg_copy_pdbs()
-vcpkg_cmake_config_fixup()
 
-file(REMOVE_RECURSE # to pass empty directories check
-    "${release_programfiles}/Common Files/SSL/certs"
-    "${release_programfiles}/Common Files/SSL/misc"
-    "${release_programfiles}/Common Files/SSL/private"
+# Fix up CMake config. Standard port uses PACKAGE_NAME OpenSSL.
+vcpkg_cmake_config_fixup(PACKAGE_NAME OpenSSL CONFIG_PATH lib/cmake/OpenSSL)
+
+# Standard vcpkg cleanup
+if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+    file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug/bin")
+endif()
+
+# Final cleanup of all temporary and misplaced directories to satisfy vcpkg layout checks
+file(REMOVE_RECURSE 
+    "${release_programfiles}"
+    "${CURRENT_PACKAGES_DIR}/SSL"
+    "${CURRENT_PACKAGES_DIR}/Program Files"
+    "${CURRENT_PACKAGES_DIR}/debug/share"
+    "${CURRENT_PACKAGES_DIR}/share/OpenSSL"
 )

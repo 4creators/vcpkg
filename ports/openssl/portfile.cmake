@@ -7,27 +7,22 @@ if(VCPKG_TARGET_IS_EMSCRIPTEN)
     vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
 endif()
 
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO openssl/openssl
-    REF "openssl-${VERSION}"
-    SHA512 f67b9cbf0b47d25904f912e22d90e920eabd3f346c136c38b21dab8a0a1d61eaff593b75ceb519c95d464116487ea4e4db83535db5a666ea2c6612e8310e5d0a
+vcpkg_download_distfile(ARCHIVE
+    URLS "https://github.com/openssl/openssl/releases/download/openssl-4.0.0/openssl-4.0.0.tar.gz"
+    FILENAME "openssl-4.0.0.tar.gz"
+    SHA512 46d456fae5358c566f860ab873533e84edb3f0757cb0697ee8768fdb2fca2cb4770849014444c56d0c8690730d2fc9476127240eb6a53fd17c58b3be6433dc10
+)
+
+vcpkg_extract_source_archive(
+    SOURCE_PATH
+    ARCHIVE "${ARCHIVE}"
     PATCHES
-        cmake-config.patch
-        command-line-length.patch
-        script-prefix.patch
         windows/install-layout.patch
         windows/install-pdbs.patch
-        windows/install-programs.diff # https://github.com/openssl/openssl/issues/28744
-        unix/android-cc.patch
-        unix/move-openssldir.patch
-        unix/no-empty-dirs.patch
-        unix/no-static-libs-for-shared.patch
+        windows/install-programs.diff
 )
 
 vcpkg_list(SET CONFIGURE_OPTIONS
-    enable-static-engine
-    enable-capieng
     no-tests
     no-docs
 )
@@ -58,11 +53,6 @@ endif()
 
 if("weak-ssl-ciphers" IN_LIST FEATURES)
     vcpkg_list(APPEND CONFIGURE_OPTIONS enable-weak-ssl-ciphers)
-endif()
-
-if("ssl3" IN_LIST FEATURES)
-    vcpkg_list(APPEND CONFIGURE_OPTIONS enable-ssl3)
-    vcpkg_list(APPEND CONFIGURE_OPTIONS enable-ssl3-method)
 endif()
 
 if(DEFINED OPENSSL_USE_NOPINSHARED)
