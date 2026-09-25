@@ -1,14 +1,14 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
-    REPO libjxl/libjxl
-    REF "v${VERSION}"
-    SHA512 a7e1f7d060b358f4382e84367d66aa2850aef3b4524a0fdfe3f22dd258fb9e35dda7540f859d8bf4c32f31c61a7a03db677f4490a9f472cd25869a9d00797336
-    HEAD_REF main
+    REPO 4creators/libjxl
+    REF 839e59a7805ffc38174ba0d5270b4cdf420aee30
+    SHA512 4e256a76888a4a52dd882ab4836ceba923d29350cb1d8078b32a64296710f99e82a45e1476ab303c9e535eb505a74ff8699acf22a9f56aa1a2a3cf6f4d321e63
+    HEAD_REF SupportBgra
     PATCHES
-        fix-dependencies.patch
-        avoid-exe-linker-flags.patch # https://github.com/libjxl/libjxl/pull/4229
-        msvc-remove-libm.patch
-        disambiguate-pow-calls.patch
+        # fix-dependencies.patch
+        # avoid-exe-linker-flags.patch # https://github.com/libjxl/libjxl/pull/4229
+        # msvc-remove-libm.patch
+        # disambiguate-pow-calls.patch
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
